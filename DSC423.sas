@@ -21,7 +21,7 @@ run;
 * Filter on country and currency;
 * Drop unused columns from dataset;
 data kickstart_data REPLACE;
-infile "S:\Project\ks-projects-201801.csv" delimiter =',' missover firstobs=2 dsd LRECL=10000;
+infile "S:\Final\ks-projects-201801.csv" delimiter =',' missover firstobs=2 dsd LRECL=10000;
 input ID name :$75. category :$50. main_category :$50. currency $ deadline :yymmdd10. goal launched :yymmdd10. pledged state :$10. backers country $ usd_pledged usd_pledged_real usd_goal_real;
 if country in ("US") and currency in ("USD");
 if state in ('successful', 'failed');
@@ -59,29 +59,23 @@ d_journalism = 0;
 if main_category = 'Journalism' then d_journalism = 1;
 d_theater = 0;
 if main_category = 'Theater' then d_theater = 1;
+*Transform log;
 log_goal = log(goal);
-*log_pledged = log(pledged);  * pledged values might be zero, can't log;
-*log_usd_pledged = log(usd_pledged);
-*log_usd_pledged_real = log(usd_pledged_real);
 log_usd_goal_real = log(usd_goal_real);
 log_timeline = log(timeline);
-
 *Transform sqrt;
 sqrt_backers = sqrt(backers);
 sqrt_pledged = sqrt(pledged);
 sqrt_usd_pledged = sqrt(usd_pledged);
 sqrt_usd_pledge_real = sqrt(usd_pledged_real);
-
 *Transform sq;
 sq_backers = backers**2;
 sq_pledged = pledged**2;
 sq_usd_pledged = usd_pledged**2;
 sq_usd_pledge_real = usd_pledged_real**2;
-
-*log_backers = log(backers);
-*interaction variable;
+*Create interaction variable with transformation;
 pledged_backers = log(pledged*backers);
-
+*Drop unused variables;
 drop country currency category ID name deadline launched;
 run;
 * Create random sample of 3000 records;
@@ -89,10 +83,11 @@ PROC SURVEYSELECT DATA = kickstart_data OUT = kickstart_data_sample seed=1234567
 METHOD = SRS NOPRINT
 N = 3000 ;
 RUN ;
+proc print data = kickstart_data_sample ;
+run;
 * Create training set;
-proc surveyselect data=kickstart_data_sample out=kickstart_train seed=495857
-n=2500
-outall;
+proc surveyselect data=kickstart_data_sample out=kickstart_train seed=9876543
+samprate = .75 outall;
 run;
 * Create test set;
 data kickstart_train;
@@ -134,75 +129,63 @@ run;
 proc freq data=kickstart_train;
 tables d_main_category;
 run;
-* Correlations;
-proc corr data=kickstart_train;
-var d_state pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater;
-run;
-
-* Residuals;
-* Interactions;
-* VIF;
+* Correlations/Outliers/Influencers;
+*FULL MODEL;
 proc logistic data=kickstart_train; 
-model train_y(event='1')=pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater/ stb corrb influence iplots; 
+model train_y(event='1')=pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater/ stb rsquare corrb influence iplots; 
 run;
-
-
+*remove outliers from dataset;
+data kickstart_train_new;
+set kickstart_train;
+if _n_ in (70,424,438,1044,1068,1883,1886,1932,2183,2520,2719,2774,2847,2981) then delete;
+run;
 * Model Selection;
-proc logistic data=kickstart_train;
+proc logistic data=kickstart_train_new;
 title "Stepwise";
 model train_y(event='1') = pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater / selection= stepwise stb rsquare;
 run;
-proc logistic data=kickstart_train;
+proc logistic data=kickstart_train_new;
 title "Forward";
 model train_y(event='1') = pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater / selection= forward stb rsquare;
 run;
-proc logistic data=kickstart_train;
+proc logistic data=kickstart_train_new;
 title "Backward";
 model train_y(event='1') = pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater / selection= backward stb rsquare;
 run;
-*proc logistic data=kickstart_train;
-*title "Score";
-*model train_y(event='1') = pledged_backers log_goal sqrt_pledged sqrt_backers sqrt_usd_pledged sqrt_usd_pledge_real log_usd_goal_real timeline d_food d_games d_photography d_art d_fashion d_film_video d_music d_technology d_publishing d_crafts d_comics d_design d_dance d_journalism d_theater / selection= score stb rsquare;
-*run;
-
-
-* Correlations;
-proc corr data=kickstart_train;
-var pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics;
-run;
-
-proc logistic data=kickstart_train; 
-model train_y(event='1')=pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/ stb corrb influence iplots; 
-run;
-
-* Outliers/Influencers;
-proc reg data=kickstart_train;
-title "Residuals";
-model d_state = pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics;
-plot npp.*student.;
-run;
-proc reg data=kickstart_train;
-model d_state = pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comic / influence r;
-run;
-
-
-* VIF;
-proc reg data=test;
-model d_state = goal pledged backers usd_pledged timeline d_food d_games d_art d_fashion d_film_video d_technology d_publishing d_crafts d_comics d_design d_journalism / vif stb;
-run;
-proc reg data=test;
-model d_state = goal pledged backers timeline d_food d_games d_art d_fashion d_film_video d_technology d_publishing d_crafts d_comics d_design d_journalism / vif stb;
-run;
-* Outliers;
-proc reg;
-model d_state = goal pledged backers timeline d_food d_games d_art d_fashion d_film_video d_technology d_publishing d_crafts d_comics d_design d_journalism / influence r;
+* Correlations/Outliers/Influencers;
+*SELECTED MODEL;
+proc logistic data=kickstart_train_new; 
+model train_y(event='1')=pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/ stb rsquare corrb influence iplots; 
 run;
 * fit the final model, compute predicted probability;
 * based on model built using the training set, compute the;
 * predicted probability for test set;
-proc logistic data=kickstart_train; 
-model train_y(event='1' )=sediments d_meander1;
+proc logistic data=kickstart_train_new; 
+model train_y(event='1')=pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics;
 * output results to dataset called pred;
 * predicted value is written to variable --> phat ;
 output out=pred(where=(train_y=.))  p=phat lower=lcl upper=ucl predprob=(individual);
+run;
+*TRY TO FIND THE BEST THRESHOLD;
+data kickstart_train_new;
+set kickstart_train_new;
+if selected then train_y=d_state;
+run;
+*Test different thresholds;
+proc logistic data=kickstart_train_new; 
+model train_y(event='1') = pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/
+ctable pprob = (.2 to .8 by .05);
+output out = pred(where=(train_y=.)) p = phat lower=lcl upper=ucl
+predprob=(individual);
+run;
+*compute predicted Y in testing set for pred_prob > .05;
+data probs;
+set pred;
+pred_y=0;
+threshold=.6; *starting threshold;
+if phat>threshold then pred_y=1;
+run;
+*compute classification matrix;
+proc freq data=probs;
+tables d_state*pred_y/norow nocol nopercent;;
 run;
