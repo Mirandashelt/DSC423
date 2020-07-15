@@ -165,13 +165,13 @@ run;
 * Correlations/Outliers/Influencers;
 *SELECTED MODEL;
 proc logistic data=kickstart_train_final; 
-model train_y(event='1')=pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/ stb rsquare corrb influence iplots; 
+model train_y(event='1')=log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/ stb rsquare corrb influence iplots; 
 run;
 * fit the final model, compute predicted probability;
 * based on model built using the training set, compute the;
 * predicted probability for test set;
 proc logistic data=kickstart_train_final; 
-model train_y(event='1')=pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics;
+model train_y(event='1')=log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics;
 * output results to dataset called pred;
 * predicted value is written to variable --> phat ;
 output out=pred(where=(train_y=.))  p=phat lower=lcl upper=ucl predprob=(individual);
@@ -183,7 +183,7 @@ if selected then train_y=d_state;
 run;
 *Test different thresholds;
 proc logistic data=kickstart_train_final; 
-model train_y(event='1') = pledged_backers log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/
+model train_y(event='1') = log_goal sqrt_backers sqrt_pledged d_games d_technology d_comics/
 ctable pprob = (.2 to .8 by .05);
 output out = pred(where=(train_y=.)) p = phat lower=lcl upper=ucl
 predprob=(individual);
